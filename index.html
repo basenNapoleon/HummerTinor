@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Hummertinor</title>
+<meta name="theme-color" content="#0b3c5d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Hummertinor">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  --navy:#0b3c5d; --navy2:#072a42; --sea:#dbeef5; --paper:#fffdf8; --ink:#14232e;
+  --muted:#5b6b76; --line:#d8dee2; --go:#e8590c; --go2:#c2410c; --ok:#2b8a3e; --warn:#c92a2a;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--sea);color:var(--ink);
+  font:18px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
+#map{position:fixed;inset:0;background:var(--sea)}
+
+/* Siktet i mitten av kartan */
+#sight{position:fixed;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;pointer-events:none;z-index:500}
+#sight::before,#sight::after{content:"";position:absolute;background:var(--warn);box-shadow:0 0 0 1.5px #fff}
+#sight::before{left:21px;top:0;width:2px;height:44px}
+#sight::after{top:21px;left:0;height:2px;width:44px}
+
+/* Topp: vem är jag */
+#who{position:fixed;z-index:600;top:calc(var(--sat) + 10px);left:10px;right:76px;display:flex;align-items:center;gap:12px;
+  min-height:64px;padding:8px 14px 8px 8px;border-radius:34px;background:var(--paper);box-shadow:0 2px 10px rgba(0,0,0,.28);text-align:left}
+#who img,.float{width:48px;height:48px;border-radius:50%;background:var(--sea);border:4px solid var(--navy);flex:none;object-fit:cover}
+#who .t{flex:1;min-width:0}
+#who .n{font-weight:700;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#who .c{font-size:15px;color:var(--muted)}
+#who .ch{font-size:15px;color:var(--navy);font-weight:600;flex:none}
+#sync{position:fixed;z-index:600;top:calc(var(--sat) + 80px);left:14px;font-size:13px;padding:3px 10px;border-radius:12px;
+  background:rgba(255,253,248,.92);color:var(--muted);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+#sync.ok{color:var(--ok)} #sync.bad{color:var(--warn)}
+
+.round{position:fixed;z-index:600;right:10px;width:58px;height:58px;border-radius:50%;background:var(--paper);
+  box-shadow:0 2px 10px rgba(0,0,0,.28);display:grid;place-items:center}
+.round svg{width:30px;height:30px}
+#locate{top:calc(var(--sat) + 13px)} #locate.on{background:var(--navy);color:#fff}
+#info{top:calc(var(--sat) + 81px);font-weight:700;font-size:24px;color:var(--navy)}
+
+#drop{position:fixed;z-index:600;left:14px;right:14px;bottom:calc(var(--sab) + 26px);min-height:72px;border-radius:20px;
+  background:var(--go);color:#fff;font-size:24px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+#drop:active{background:var(--go2)}
+#drop.full{background:#6c757d}
+#drop small{display:block;font-size:15px;font-weight:500;opacity:.95}
+.leaflet-bottom{bottom:calc(var(--sab) + 104px)}
+.leaflet-control-attribution{font-size:10px}
+
+#toast{position:fixed;z-index:1500;left:20px;right:20px;top:calc(var(--sat) + 150px);padding:14px 18px;border-radius:14px;
+  background:var(--navy2);color:#fff;text-align:center;font-weight:600;opacity:0;transform:translateY(-8px);
+  transition:.2s;pointer-events:none}
+#toast.show{opacity:1;transform:none}
+
+/* Tinmarkörer */
+.pot{position:relative;width:46px;height:46px}
+.pot img{width:46px;height:46px;border-radius:50%;background:var(--sea);border:4px solid;object-fit:cover;
+  box-shadow:0 2px 6px rgba(0,0,0,.45);display:block}
+.pot b{position:absolute;right:-6px;bottom:-6px;min-width:22px;height:22px;border-radius:11px;color:#fff;
+  font:700 14px/22px system-ui,sans-serif;text-align:center;border:1.5px solid #fff}
+.medot{width:20px;height:20px;border-radius:50%;background:#1c7ed6;border:3px solid #fff;box-shadow:0 0 0 2px rgba(28,126,214,.45)}
+
+/* Paneler */
+.back{position:fixed;inset:0;z-index:1000;background:rgba(7,42,66,.5);display:none;align-items:flex-end}
+.back.open{display:flex}
+.sheet{width:100%;max-height:92%;overflow:auto;background:var(--paper);border-radius:22px 22px 0 0;
+  padding:18px 16px calc(var(--sab) + 18px);box-shadow:0 -4px 20px rgba(0,0,0,.3)}
+.sheet h2{margin:0 0 4px;font-size:24px} .sheet p{margin:6px 0;color:var(--muted)}
+.btn{display:block;width:100%;min-height:60px;margin-top:12px;border-radius:16px;font-size:20px;font-weight:700;
+  background:var(--navy);color:#fff}
+.btn.sec{background:#e9eef1;color:var(--ink)} .btn.danger{background:var(--warn)} .btn.go{background:var(--go)}
+.row{display:flex;gap:10px} .row .btn{flex:1}
+.person{display:flex;align-items:center;gap:12px;padding:8px;margin-top:10px;border:2px solid var(--line);border-radius:18px;background:#fff}
+.person.me{border-color:var(--navy);background:#eef6fa}
+.person .pick{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left;min-height:56px}
+.person .n{font-weight:700;font-size:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person .c{font-size:15px;color:var(--muted)}
+.person .edit{flex:none;min-width:76px;min-height:52px;border-radius:14px;background:#e9eef1;font-weight:600;font-size:16px}
+.facts{margin:12px 0 0;padding:0;list-style:none}
+.facts li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.facts span:first-child{color:var(--muted)} .facts span:last-child{font-weight:600;text-align:right}
+.head{display:flex;align-items:center;gap:14px}
+.head .float{width:64px;height:64px}
+
+/* Ritverktyg */
+label.f{display:block;font-weight:600;margin-top:12px}
+input[type=text]{width:100%;min-height:56px;margin-top:6px;padding:10px 14px;font:inherit;font-size:20px;border:2px solid var(--line);
+  border-radius:14px;background:#fff;color:var(--ink)}
+#cvwrap{display:flex;justify-content:center;margin-top:10px}
+#cv{width:min(78vw,300px);height:min(78vw,300px);border-radius:50%;background:var(--sea);border:4px solid var(--navy);touch-action:none}
+.pal{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px}
+.pal button{height:48px;border-radius:12px;border:2px solid var(--line)}
+.pal button.on{outline:4px solid var(--navy);outline-offset:2px}
+.sizes{display:flex;gap:8px;margin-top:10px}
+.sizes button{flex:1;min-height:52px;border-radius:12px;background:#e9eef1;font-weight:600;font-size:16px;display:grid;place-items:center}
+.sizes button.on{background:var(--navy);color:#fff}
+.sizes i{display:block;border-radius:50%;background:currentColor}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="sight"></div>
+
+<button id="who" aria-label="Byt person">
+  <img id="whoImg" alt=""><span class="t"><span class="n" id="whoName">Vem är du?</span><br><span class="c" id="whoCount">Tryck här för att börja</span></span>
+  <span class="ch">Byt</span>
+</button>
+<div id="sync" hidden></div>
+<button id="locate" class="round" aria-label="Visa min plats">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+</button>
+<button id="info" class="round" aria-label="Hjälp">?</button>
+<button id="drop">Lägg tina här<small id="dropSub">vid det röda krysset</small></button>
+<div id="toast"></div>
+
+<div class="back" id="bPeople"><div class="sheet">
+  <h2>Vem är du?</h2><p>Tryck på ditt namn. Dina tinor läggs med ditt flöte.</p>
+  <div id="peopleList"></div>
+  <button class="btn" id="newPerson">+ Ny person</button>
+  <button class="btn sec" data-close>Stäng</button>
+</div></div>
+
+<div class="back" id="bDraw"><div class="sheet">
+  <h2 id="drawTitle">Ny person</h2>
+  <label class="f">Namn<input type="text" id="pName" maxlength="20" autocomplete="off" placeholder="t.ex. Morfar"></label>
+  <label class="f">Rita ditt flöte</label>
+  <div id="cvwrap"><canvas id="cv" width="240" height="240"></canvas></div>
+  <div class="pal" id="pal"></div>
+  <div class="sizes" id="sizes"></div>
+  <div class="row"><button class="btn sec" id="undo">Ångra</button><button class="btn sec" id="clear">Sudda allt</button></div>
+  <button class="btn go" id="savePerson">Spara</button>
+  <button class="btn danger" id="delPerson" hidden>Ta bort personen</button>
+  <button class="btn sec" data-close>Avbryt</button>
+</div></div>
+
+<div class="back" id="bPot"><div class="sheet">
+  <div class="head"><img class="float" id="potImg" alt=""><div><h2 id="potTitle"></h2><p id="potSub"></p></div></div>
+  <ul class="facts" id="potFacts"></ul>
+  <button class="btn danger" id="potUp">Tinan är upptagen</button>
+  <button class="btn sec" id="potMove">Flytta tinan</button>
+  <button class="btn sec" data-close>Stäng</button>
+</div></div>
+
+<div class="back" id="bInfo"><div class="sheet">
+  <h2>Så här gör du</h2>
+  <p><b>1.</b> Tryck högst upp och välj vem du är.</p>
+  <p><b>2.</b> Tryck på den runda knappen uppe till höger. Kartan följer då båten.</p>
+  <p><b>3.</b> När tinan går i vattnet: tryck på <b>Lägg tina här</b>.</p>
+  <p><b>4.</b> Tryck på en tina på kartan för att se den, flytta den eller ta upp den.</p>
+  <p>Varje person får ha 6 tinor.</p>
+  <p id="infoSync"></p>
+  <button class="btn" data-close>Stäng</button>
+</div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ============ INSTÄLLNINGAR ============ */
+const CFG = {
+  // Klistra in adressen till Firebase Realtime Database här (se README). Tom = allt sparas bara på den här telefonen.
+  FIREBASE_URL: '',
+  // Hemlig gruppkod som alla i familjen delar. Byt till något eget som är svårt att gissa (små bokstäver, siffror, bindestreck).
+  GROUP: '',
+  MAX_POTS: 6,
+  HOME: [58.4786, 11.3247],   // Bovallstrand
+  ZOOM: 14,
+  // Kartlager. Byt eller lägg till här om ni får tillgång till annat sjökort.
+  BASE: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, crossOrigin: true,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' },
+  SEAMARKS: { url: 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', maxZoom: 18,
+          attribution: 'Sjömärken &copy; <a href="https://www.openseamap.org">OpenSeaMap</a>' }
+};
+const COLORS = ['#c92a2a','#1864ab','#2b8a3e','#e67700','#862e9c','#0b7285','#5c3d2e','#d6336c','#212529','#5c940d'];
+const PAINT  = ['#111111','#ffffff','#ffd43b','#f76707','#e03131','#7b4a2a','#2f9e44','#1c7ed6','#f783ac','#868e96'];
+const KEY = 'hummertinor.v1';
+const $ = id => document.getElementById(id);
+
+/* ============ DATA ============ */
+// people[id] = {id,name,color,icon,ts,del}   pots[id] = {id,owner,lat,lng,set,ts,del}
+let S = { me: null, group: '', people: {}, pots: {} };
+try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+const g = new URLSearchParams(location.search).get('g') || CFG.GROUP || S.group;
+S.group = (g || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const live = o => Object.values(o).filter(x => x && !x.del);
+const potsOf = pid => live(S.pots).filter(p => p.owner === pid).sort((a, b) => a.set - b.set);
+const me = () => (S.me && S.people[S.me] && !S.people[S.me].del) ? S.people[S.me] : null;
+
+/* ============ KARTA ============ */
+const map = L.map('map', { zoomControl: false, attributionControl: true }).setView(S.view ? S.view.c : CFG.HOME, S.view ? S.view.z : CFG.ZOOM);
+L.tileLayer(CFG.BASE.url, CFG.BASE).addTo(map);
+L.tileLayer(CFG.SEAMARKS.url, CFG.SEAMARKS).addTo(map);
+L.control.scale({ imperial: false, position: 'bottomright' }).addTo(map);
+const potLayer = L.layerGroup().addTo(map);
+map.on('moveend', () => { const c = map.getCenter(); S.view = { c: [c.lat, c.lng], z: map.getZoom() }; save(); });
+
+/* ============ MIN PLATS ============ */
+let moving = null, pos = null, follow = false, meDot = null, meAcc = null, watching = false;
+function startWatch() {
+  if (watching || !navigator.geolocation) { if (!navigator.geolocation) toast('Telefonen kan inte visa din plats'); return; }
+  watching = true;
+  navigator.geolocation.watchPosition(p => {
+    pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy };
+    const ll = [pos.lat, pos.lng];
+    if (!meDot) {
+      meAcc = L.circle(ll, { radius: pos.acc, color: '#1c7ed6', weight: 1, fillOpacity: .12, interactive: false }).addTo(map);
+      meDot = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="medot"></div>', iconSize: [20, 20], iconAnchor: [10, 10] }), interactive: false, zIndexOffset: -100 }).addTo(map);
+    } else { meDot.setLatLng(ll); meAcc.setLatLng(ll).setRadius(pos.acc); }
+    if (follow) map.setView(ll, Math.max(map.getZoom(), 16), { animate: true });
+  }, err => {
+    // Tillfälliga fel (tappad GPS) ska inte stänga av följningen, bevakningen fortsätter av sig själv.
+    if (err.code === 1) { setFollow(false); toast('Du behöver tillåta plats i telefonen'); }
+    else if (!pos) toast('Hittar inte din plats just nu');
+  }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+}
+function setFollow(on) {
+  follow = on; $('locate').classList.toggle('on', on);
+  $('dropSub').textContent = on ? 'där båten är nu' : 'vid det röda krysset';
+}
+$('locate').onclick = () => {
+  setFollow(true); startWatch();
+  if (pos) map.setView([pos.lat, pos.lng], Math.max(map.getZoom(), 16));
+};
+map.on('dragstart', () => setFollow(false));
+
+/* ============ RITA UT ============ */
+function render() {
+  const m = me();
+  $('whoImg').src = m ? m.icon : BLANK;
+  $('whoImg').style.borderColor = m ? m.color : '#adb5bd';
+  $('whoName').textContent = m ? m.name : 'Vem är du?';
+  const n = m ? potsOf(m.id).length : 0;
+  $('whoCount').textContent = m ? `${n} av ${CFG.MAX_POTS} tinor i vattnet` : 'Tryck här för att börja';
+  $('drop').classList.toggle('full', !!m && n >= CFG.MAX_POTS);
+
+  potLayer.clearLayers();
+  for (const p of live(S.people)) {
+    potsOf(p.id).forEach((pot, i) => {
+      const el = document.createElement('div'); el.className = 'pot';
+      const img = document.createElement('img'); img.src = p.icon; img.alt = ''; img.style.borderColor = p.color;
+      const b = document.createElement('b'); b.textContent = i + 1; b.style.background = p.color;
+      el.append(img, b);
+      L.marker([pot.lat, pot.lng], { icon: L.divIcon({ className: '', html: el, iconSize: [46, 46], iconAnchor: [23, 23] }) })
+        .on('click', () => openPot(pot.id)).addTo(potLayer);
+    });
+  }
+}
+
+/* ============ PANELER ============ */
+const open = id => $(id).classList.add('open');
+const closeAll = () => document.querySelectorAll('.back.open').forEach(b => b.classList.remove('open'));
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll);
+document.querySelectorAll('.back').forEach(b => b.addEventListener('click', e => { if (e.target === b) closeAll(); }));
+let toastT;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200); }
+
+/* ---- Personer ---- */
+function openPeople() {
+  const list = $('peopleList'); list.textContent = '';
+  const ppl = live(S.people).sort((a, b) => a.name.localeCompare(b.name, 'sv'));
+  for (const p of ppl) {
+    const row = document.createElement('div'); row.className = 'person' + (p.id === S.me ? ' me' : '');
+    const pick = document.createElement('button'); pick.className = 'pick';
+    const img = document.createElement('img'); img.className = 'float'; img.src = p.icon; img.alt = ''; img.style.borderColor = p.color;
+    const t = document.createElement('span'); t.style.minWidth = 0;
+    const n = document.createElement('div'); n.className = 'n'; n.textContent = p.name;
+    const c = document.createElement('div'); c.className = 'c'; c.textContent = `${potsOf(p.id).length} av ${CFG.MAX_POTS} tinor` + (p.id === S.me ? ' · det här är du' : '');
+    t.append(n, c); pick.append(img, t);
+    pick.onclick = () => { S.me = p.id; save(); render(); closeAll(); toast('Du är ' + p.name); };
+    const ed = document.createElement('button'); ed.className = 'edit'; ed.textContent = 'Ändra'; ed.onclick = () => openDraw(p.id);
+    row.append(pick, ed); list.append(row);
+  }
+  closeAll(); open('bPeople');
+}
+$('who').onclick = openPeople;
+$('newPerson').onclick = () => openDraw(null);
+$('info').onclick = () => {
+  $('infoSync').textContent = base() ? `Alla i gruppen "${S.group}" ser samma tinor.` : 'Tinorna sparas just nu bara på den här telefonen.';
+  open('bInfo');
+};
+
+/* ---- Ritverktyg ---- */
+const cv = $('cv'), cx = cv.getContext('2d');
+let paint = PAINT[3], brush = 22, undoStack = [], editing = null, drawing = false, last = null, dirty = false;
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+PAINT.forEach((c, i) => {
+  const b = document.createElement('button'); b.style.background = c; b.setAttribute('aria-label', 'Färg'); if (i === 3) b.className = 'on';
+  b.onclick = () => { paint = c; [...$('pal').children].forEach(x => x.classList.toggle('on', x === b)); };
+  $('pal').append(b);
+});
+[['Tunn', 8], ['Mellan', 22], ['Tjock', 48]].forEach(([name, w]) => {
+  const b = document.createElement('button'); if (w === 22) b.className = 'on';
+  const dot = document.createElement('i'); dot.style.width = dot.style.height = Math.min(26, w / 1.6 + 4) + 'px';
+  b.append(dot, document.createTextNode(name));
+  b.onclick = () => { brush = w; [...$('sizes').children].forEach(x => x.classList.toggle('on', x === b)); };
+  $('sizes').append(b);
+});
+function cvPt(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; }
+function stroke(a, b) { cx.strokeStyle = paint; cx.lineWidth = brush; cx.lineCap = cx.lineJoin = 'round'; cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke(); }
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault(); cv.setPointerCapture(e.pointerId);
+  undoStack.push(cx.getImageData(0, 0, cv.width, cv.height)); if (undoStack.length > 25) undoStack.shift();
+  drawing = true; dirty = true; last = cvPt(e); stroke(last, { x: last.x + .01, y: last.y });
+});
+cv.addEventListener('pointermove', e => { if (!drawing) return; const p = cvPt(e); stroke(last, p); last = p; });
+['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, () => { drawing = false; }));
+$('undo').onclick = () => { const d = undoStack.pop(); if (d) cx.putImageData(d, 0, 0); };
+$('clear').onclick = () => { undoStack.push(cx.getImageData(0, 0, cv.width, cv.height)); cx.clearRect(0, 0, cv.width, cv.height); };
+
+function openDraw(pid) {
+  editing = pid; undoStack = []; dirty = false;
+  const p = pid ? S.people[pid] : null;
+  $('drawTitle').textContent = p ? 'Ändra ' + p.name : 'Ny person';
+  $('pName').value = p ? p.name : '';
+  cx.clearRect(0, 0, cv.width, cv.height);
+  if (p) { const im = new Image(); im.onload = () => cx.drawImage(im, 0, 0, cv.width, cv.height); im.src = p.icon; }
+  delArmed = false; $('delPerson').hidden = !p; $('delPerson').textContent = 'Ta bort personen';
+  closeAll(); open('bDraw');
+}
+let delArmed = false;
+$('delPerson').onclick = () => {
+  const p = S.people[editing]; if (!p) return;
+  if (!delArmed) { delArmed = true; $('delPerson').textContent = 'Tryck igen: tar bort personen och tinorna'; return; }
+  const now = Date.now();
+  potsOf(p.id).forEach(pot => { pot.del = true; pot.ts = now; });
+  p.del = true; p.ts = now; if (S.me === p.id) S.me = null;
+  save(); render(); syncSoon(); openPeople();
+};
+function exportIcon() {
+  const o = document.createElement('canvas'); o.width = o.height = 96;
+  o.getContext('2d').drawImage(cv, 0, 0, 96, 96);
+  return o.toDataURL('image/png');
+}
+$('savePerson').onclick = () => {
+  const name = $('pName').value.trim();
+  if (!name) { toast('Skriv ditt namn först'); $('pName').focus(); return; }
+  if (!editing && !dirty) { toast('Rita ditt flöte först'); return; }
+  let p = editing ? S.people[editing] : null;
+  if (!p) {
+    const used = live(S.people).map(x => x.color);
+    p = { id: uid(), color: COLORS.find(c => !used.includes(c)) || COLORS[live(S.people).length % COLORS.length] };
+    S.people[p.id] = p; S.me = p.id;
+  }
+  p.name = name; p.icon = exportIcon(); p.ts = Date.now();
+  save(); render(); closeAll(); syncSoon(); toast('Sparat');
+};
+
+/* ---- Lägg tina ---- */
+$('drop').onclick = () => {
+  if (moving) { movePot(); return; }
+  const m = me();
+  if (!m) { openPeople(); return; }
+  if (potsOf(m.id).length >= CFG.MAX_POTS) { toast(`${m.name} har redan ${CFG.MAX_POTS} tinor i vattnet`); return; }
+  const c = (follow && pos) ? pos : map.getCenter();
+  const pot = { id: uid(), owner: m.id, lat: +c.lat.toFixed(6), lng: +c.lng.toFixed(6), set: Date.now(), ts: Date.now() };
+  S.pots[pot.id] = pot; save(); render(); syncSoon();
+  toast(`Tina ${potsOf(m.id).length} av ${CFG.MAX_POTS} lagd`);
+};
+
+/* ---- Visa tina ---- */
+let curPot = null, armed = false;
+const dm = (v, pos_, neg) => { const a = Math.abs(v), d = Math.floor(a); return `${d}° ${((a - d) * 60).toFixed(3)}' ${v >= 0 ? pos_ : neg}`; };
+function distBearing(a, b) {
+  const R = 6371000, r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  const d = 2 * R * Math.asin(Math.sqrt(h));
+  const brg = (Math.atan2(Math.sin(dLng) * Math.cos(b.lat * r), Math.cos(a.lat * r) * Math.sin(b.lat * r) - Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos(dLng)) / r + 360) % 360;
+  return { d, dir: ['norr', 'nordost', 'öster', 'sydost', 'söder', 'sydväst', 'väster', 'nordväst'][Math.round(brg / 45) % 8] };
+}
+function openPot(id) {
+  const pot = S.pots[id]; if (!pot || pot.del) return;
+  const p = S.people[pot.owner] || { name: '?', icon: BLANK, color: '#868e96' };
+  curPot = id; armed = false; $('potUp').textContent = 'Tinan är upptagen';
+  $('potImg').src = p.icon; $('potImg').style.borderColor = p.color;
+  $('potTitle').textContent = `${p.name}, tina ${potsOf(pot.owner).findIndex(x => x.id === id) + 1}`;
+  const days = Math.floor((Date.now() - pot.set) / 864e5);
+  $('potSub').textContent = days === 0 ? 'Lagd i dag' : days === 1 ? 'Har legat 1 dygn' : `Har legat ${days} dygn`;
+  const facts = [['Lagd', new Date(pot.set).toLocaleString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })]];
+  if (pos) { const x = distBearing(pos, pot); facts.push(['Härifrån', x.d < 15 ? 'Du är vid tinan' : (x.d < 1000 ? Math.round(x.d / 10) * 10 + ' m' : (x.d / 1000).toFixed(1) + ' km') + ' åt ' + x.dir]); }
+  facts.push(['Position', dm(pot.lat, 'N', 'S') + '  ' + dm(pot.lng, 'O', 'V')]);
+  const ul = $('potFacts'); ul.textContent = '';
+  for (const [k, v] of facts) { const li = document.createElement('li'), a = document.createElement('span'), b = document.createElement('span'); a.textContent = k; b.textContent = v; li.append(a, b); ul.append(li); }
+  open('bPot');
+}
+$('potUp').onclick = () => {
+  if (!armed) { armed = true; $('potUp').textContent = 'Tryck en gång till för att ta bort'; return; }
+  const pot = S.pots[curPot]; if (pot) { pot.del = true; pot.ts = Date.now(); }
+  save(); render(); closeAll(); syncSoon(); toast('Tinan är borttagen från kartan');
+};
+$('potMove').onclick = () => {
+  moving = curPot; closeAll();
+  $('drop').firstChild.textContent = 'Flytta tinan hit'; $('drop').classList.remove('full');
+  toast('Dra kartan så krysset hamnar rätt, tryck sedan på knappen');
+};
+function movePot() {
+  const pot = S.pots[moving], c = (follow && pos) ? pos : map.getCenter();
+  if (pot && !pot.del) { pot.lat = +c.lat.toFixed(6); pot.lng = +c.lng.toFixed(6); pot.ts = Date.now(); }
+  moving = null; $('drop').firstChild.textContent = 'Lägg tina här';
+  save(); render(); syncSoon(); toast('Tinan är flyttad');
+}
+
+/* ============ DELNING MELLAN TELEFONER (Firebase REST) ============ */
+const base = () => (CFG.FIREBASE_URL && S.group) ? `${CFG.FIREBASE_URL.replace(/\/+$/, '')}/grupper/${S.group}` : null;
+let syncing = false, again = false, syncT, es = null;
+function setSync(txt, cls) { const el = $('sync'); el.hidden = !txt; el.textContent = txt; el.className = cls || ''; }
+function syncSoon() { clearTimeout(syncT); syncT = setTimeout(sync, 400); }
+async function sync() {
+  const b = base(); if (!b) return;
+  if (syncing) { again = true; return; }
+  syncing = true;
+  try {
+    const r = await fetch(b + '.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const remote = (await r.json()) || {};
+    const out = [];
+    let changed = false;
+    for (const kind of ['people', 'pots']) {
+      const rem = remote[kind] || {}, loc = S[kind];
+      for (const id in rem) if (rem[id] && (!loc[id] || (rem[id].ts || 0) > (loc[id].ts || 0))) { loc[id] = rem[id]; changed = true; }
+      for (const id in loc) if (!rem[id] || (loc[id].ts || 0) > (rem[id].ts || 0)) out.push([kind, id]);
+    }
+    if (changed) { save(); render(); if ($('bPeople').classList.contains('open')) openPeople(); }
+    for (const [kind, id] of out) {
+      const w = await fetch(`${b}/${kind}/${id}.json`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(S[kind][id]) });
+      if (!w.ok) throw new Error(w.status);
+    }
+    setSync('Delas med alla', 'ok');
+    if (!es && window.EventSource) {
+      es = new EventSource(b + '.json'); let first = true;
+      const ping = () => { if (first) { first = false; return; } syncSoon(); };
+      es.addEventListener('put', ping); es.addEventListener('patch', ping);
+    }
+  } catch (e) {
+    setSync(navigator.onLine ? 'Kan inte dela just nu' : 'Ingen täckning, sparat i telefonen', 'bad');
+  }
+  syncing = false;
+  if (again) { again = false; syncSoon(); }
+}
+window.addEventListener('online', sync);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
+setInterval(() => { if (!document.hidden) sync(); }, 30000);
+
+/* ============ START ============ */
+save(); render(); sync();
+if (!me()) openPeople();
+if (navigator.permissions && navigator.permissions.query) {
+  navigator.permissions.query({ name: 'geolocation' }).then(s => { if (s.state === 'granted') startWatch(); }).catch(() => {});
+}
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
