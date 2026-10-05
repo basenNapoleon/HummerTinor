@@ -1,5 +1,5 @@
 // Höj VERSION vid varje ny version av appen så hämtas den nya.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = 'hummer-shell-' + VERSION;
 const TILES = 'hummer-tiles';
 const MAX_TILES = 800;
