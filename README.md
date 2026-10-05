@@ -24,12 +24,12 @@ Utan detta sparas tinorna bara på den egna telefonen.
    ```
    Det går inte att lista grupper, så gruppkoden fungerar som lösenord. Den som kan koden kan läsa och ändra.
 4. Kopiera databasens adress (t.ex. `https://hummertinor-xxxx-default-rtdb.europe-west1.firebasedatabase.app`).
-5. Överst i skriptet i `index.html`, fyll i:
-   ```js
-   FIREBASE_URL: 'https://…firebasedatabase.app',
-   GROUP: 'en-egen-hemlig-kod-123',
-   ```
-6. Pusha. Alla som öppnar sidan ser nu samma tinor. Utan täckning sparas ändringar i telefonen och skickas när nätet är tillbaka.
+5. Överst i skriptet i `index.html`, fyll i `FIREBASE_URL`. Låt `GROUP` vara tom.
+6. Första gången appen öppnas frågar den efter en gruppkod. Alla som skriver samma kod ser samma tinor,
+   och en ny kod skapar en ny grupp. Koden går att byta under **?** → **Byt grupp**.
+   En länk med `?g=koden` på slutet fyller i koden automatiskt.
+
+Utan täckning sparas ändringar i telefonen och skickas när nätet är tillbaka.
 
 ## Kartan
 OpenStreetMap + sjömärken från OpenSeaMap. Inga djupsiffror: Sjöfartsverkets sjökort kräver tillstånd/avgift.

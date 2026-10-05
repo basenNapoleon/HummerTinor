@@ -150,6 +150,15 @@ input[type=text]{width:100%;min-height:56px;margin-top:6px;padding:10px 14px;fon
   <button class="btn sec" data-close>Stäng</button>
 </div></div>
 
+<div class="back" id="bGroup"><div class="sheet">
+  <h2>Vilken grupp?</h2>
+  <p>Skriv gruppens kod. Alla som skriver samma kod ser samma tinor.</p>
+  <p>Finns ingen grupp med koden skapas en ny.</p>
+  <label class="f">Gruppkod<input type="text" id="gCode" maxlength="40" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="t.ex. familjens kod"></label>
+  <button class="btn go" id="gJoin">Gå med</button>
+  <button class="btn sec" id="gCancel" data-close>Avbryt</button>
+</div></div>
+
 <div class="back" id="bInfo"><div class="sheet">
   <h2>Så här gör du</h2>
   <p><b>1.</b> Tryck högst upp och välj vem du är.</p>
@@ -158,6 +167,7 @@ input[type=text]{width:100%;min-height:56px;margin-top:6px;padding:10px 14px;fon
   <p><b>4.</b> Tryck på en tina på kartan för att se den, flytta den eller ta upp den.</p>
   <p>Varje person får ha 6 tinor.</p>
   <p id="infoSync"></p>
+  <button class="btn sec" id="infoGroup">Byt grupp</button>
   <button class="btn" data-close>Stäng</button>
 </div></div>
 
@@ -167,8 +177,8 @@ input[type=text]{width:100%;min-height:56px;margin-top:6px;padding:10px 14px;fon
 const CFG = {
   // Klistra in adressen till Firebase Realtime Database här (se README). Tom = allt sparas bara på den här telefonen.
   FIREBASE_URL: 'https://hummertinor-default-rtdb.europe-west1.firebasedatabase.app',
-  // Hemlig gruppkod som alla i familjen delar. Byt till något eget som är svårt att gissa (små bokstäver, siffror, bindestreck).
-  GROUP: 'bovall',
+  // Lämna tom: då frågar appen efter gruppkod första gången. Fyll bara i om alla ska hamna i samma grupp utan att fråga.
+  GROUP: '',
   MAX_POTS: 6,
   HOME: [58.4786, 11.3247],   // Bovallstrand
   ZOOM: 14,
@@ -187,8 +197,9 @@ const $ = id => document.getElementById(id);
 // people[id] = {id,name,color,icon,ts,del}   pots[id] = {id,owner,lat,lng,set,ts,del}
 let S = { me: null, group: '', people: {}, pots: {} };
 try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
-const g = new URLSearchParams(location.search).get('g') || CFG.GROUP || S.group;
-S.group = (g || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
+const cleanCode = v => (v || '').toLowerCase().replace(/å|ä/g, 'a').replace(/ö/g, 'o').replace(/[^a-z0-9-]/g, '').slice(0, 40);
+const linkCode = cleanCode(new URLSearchParams(location.search).get('g') || CFG.GROUP);
+if (linkCode && linkCode !== S.group) { if (S.group) { S.people = {}; S.pots = {}; S.me = null; } S.group = linkCode; }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const live = o => Object.values(o).filter(x => x && !x.del);
@@ -257,7 +268,7 @@ function render() {
 
 /* ============ PANELER ============ */
 const open = id => $(id).classList.add('open');
-const closeAll = () => document.querySelectorAll('.back.open').forEach(b => b.classList.remove('open'));
+const closeAll = () => document.querySelectorAll('.back.open').forEach(b => { if (!b.dataset.lock) b.classList.remove('open'); });
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll);
 document.querySelectorAll('.back').forEach(b => b.addEventListener('click', e => { if (e.target === b) closeAll(); }));
 let toastT;
@@ -284,9 +295,33 @@ function openPeople() {
 $('who').onclick = openPeople;
 $('newPerson').onclick = () => openDraw(null);
 $('info').onclick = () => {
-  $('infoSync').textContent = base() ? `Alla i gruppen "${S.group}" ser samma tinor.` : 'Tinorna sparas just nu bara på den här telefonen.';
+  $('infoSync').textContent = base() ? `Du är med i gruppen "${S.group}". Alla i gruppen ser samma tinor.` : 'Tinorna sparas just nu bara på den här telefonen.';
+  $('infoGroup').hidden = !CFG.FIREBASE_URL;
   open('bInfo');
 };
+
+/* ---- Grupp ---- */
+function openGroup() {
+  const first = !S.group;
+  closeAll();
+  $('gCode').value = ''; $('gCancel').hidden = first;
+  if (first) $('bGroup').dataset.lock = '1'; else delete $('bGroup').dataset.lock;   // första gången måste man välja
+  open('bGroup');
+}
+$('infoGroup').onclick = openGroup;
+$('gJoin').onclick = () => {
+  const code = cleanCode($('gCode').value);
+  if (code.length < 3) { toast('Koden behöver minst 3 tecken (bokstäver och siffror)'); $('gCode').focus(); return; }
+  if (code !== S.group) {
+    // Tinor och personer hör till gruppen, så den gamla gruppens data töms ur telefonen (ligger kvar i gruppen).
+    S.people = {}; S.pots = {}; S.me = null; S.group = code;
+    if (es) { es.close(); es = null; }
+  }
+  delete $('bGroup').dataset.lock;
+  save(); render(); closeAll(); toast('Du är med i gruppen ' + code);
+  sync().then(() => { if (!me()) openPeople(); });
+};
+$('gCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('gJoin').click(); });
 
 /* ---- Ritverktyg ---- */
 const cv = $('cv'), cx = cv.getContext('2d');
@@ -421,6 +456,7 @@ async function sync() {
     const r = await fetch(b + '.json', { cache: 'no-store' });
     if (!r.ok) throw new Error(r.status);
     const remote = (await r.json()) || {};
+    if (base() !== b) { syncing = false; return sync(); }   // gruppen byttes medan vi hämtade
     const out = [];
     let changed = false;
     for (const kind of ['people', 'pots']) {
@@ -451,7 +487,8 @@ setInterval(() => { if (!document.hidden) sync(); }, 30000);
 
 /* ============ START ============ */
 save(); render(); sync();
-if (!me()) openPeople();
+if (CFG.FIREBASE_URL && !S.group) openGroup();
+else if (!me()) openPeople();
 if (navigator.permissions && navigator.permissions.query) {
   navigator.permissions.query({ name: 'geolocation' }).then(s => { if (s.state === 'granted') startWatch(); }).catch(() => {});
 }
